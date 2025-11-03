@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from pathlib import Path
-#####pual 
+#
 DATA_DIR = Path(__file__).parent
 GLOBAL_FILE = DATA_DIR / "global_factors.xlsx"
 SPX_FILE = DATA_DIR / "spx_factors.xlsx"
@@ -23,6 +23,11 @@ ALLOCATION_CHOICES = [
     ("10% equity / 90% fixed income", "LBM 10E", "spx10e"),
     ("100% fixed income", "LBM 100F", "spx0e"),
 ]
+
+
+def format_currency(value: float) -> str:
+    """Return a currency-formatted string for UI display."""
+    return f"${value:,.0f}"
 
 
 @st.cache_data(show_spinner=False)
@@ -97,12 +102,19 @@ with st.sidebar:
     costly_spend = st.slider("Daily habit cost ($)", 0.0, 50.0, 8.0, 0.25)
     frugal_spend = st.slider("Frugal alternative cost ($)", 0.0, costly_spend, 0.50, 0.25)
     days_per_week = st.slider("Days per week for the habit", 1, 7, 5)
-    years = st.slider("Years saving and investing", 1, 50, 20)
+    years = st.slider("Years saving and investing", 1, 50,35)
     retirement_years = st.slider("Years in retirement", 1, 60, 30)
     allocation_label = st.selectbox(
         "Portfolio allocation",
         options=[label for label, _, _ in ALLOCATION_CHOICES],
         index=5,
+    )
+    worst_case_windows = st.slider(
+        "Worst-case windows to list",
+        min_value=1,
+        max_value=20,
+        value=5,
+        help="Inspect the lowest ending balances for context on downside scenarios.",
     )
 
 selected_global_col = next(
@@ -137,15 +149,36 @@ else:
 
         with cols[0]:
             st.markdown(f"**Global Factors ({selected_global_col})**")
-            st.metric("Median ending balance", f"${global_outcomes['median']:,.0f}")
+            st.metric("Median ending balance", format_currency(global_outcomes["median"]))
+            st.metric("Worst-case ending balance", format_currency(global_outcomes["min"]))
 
         with cols[1]:
             st.markdown(f"**S&P 500 Factors ({selected_spx_col})**")
-            st.metric("Median ending balance", f"${spx_outcomes['median']:,.0f}")
+            st.metric("Median ending balance", format_currency(spx_outcomes["median"]))
+            st.metric("Worst-case ending balance", format_currency(spx_outcomes["min"]))
 
         st.caption(
             "Returns use rolling windows of the selected allocation's annual factors."
         )
+
+        worst_case_cols = st.columns(2)
+        with worst_case_cols[0]:
+            st.markdown("**Global: Lowest ending balances**")
+            st.dataframe(
+                global_outcomes["table"].head(worst_case_windows).assign(
+                    ending_balance=lambda df: df["ending_balance"].map(format_currency)
+                ),
+                hide_index=True,
+            )
+
+        with worst_case_cols[1]:
+            st.markdown("**S&P 500: Lowest ending balances**")
+            st.dataframe(
+                spx_outcomes["table"].head(worst_case_windows).assign(
+                    ending_balance=lambda df: df["ending_balance"].map(format_currency)
+                ),
+                hide_index=True,
+            )
 
         if years >= 20 and not withdrawals.empty:
             withdrawal_row = withdrawals.reindex([years]).ffill().bfill().iloc[0]
@@ -167,12 +200,12 @@ else:
                 st.markdown("**Global Portfolio**")
                 st.metric(
                     "Median annual withdrawal",
-                    f"${median_withdrawal_global:,.0f}",
+                    format_currency(median_withdrawal_global),
                     help="Median ending balance × median withdrawal rate",
                 )
                 st.metric(
                     f"Total over {retirement_years} years",
-                    f"${total_income_global:,.0f}",
+                    format_currency(total_income_global),
                     help="Median annual withdrawal × years in retirement",
                 )
 
@@ -180,12 +213,12 @@ else:
                 st.markdown("**S&P 500 Portfolio**")
                 st.metric(
                     "Median annual withdrawal",
-                    f"${median_withdrawal_spx:,.0f}",
+                    format_currency(median_withdrawal_spx),
                     help="Median ending balance × median withdrawal rate",
                 )
                 st.metric(
                     f"Total over {retirement_years} years",
-                    f"${total_income_spx:,.0f}",
+                    format_currency(total_income_spx),
                     help="Median annual withdrawal × years in retirement",
                 )
     except FileNotFoundError as err:
